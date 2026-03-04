@@ -12,9 +12,16 @@ import os
 import subprocess
 import sys
 import time
-import torch
-from torch.utils.cpp_extension import (BuildExtension, CppExtension,
-                                       CUDAExtension)
+
+try:
+    import torch
+    from torch.utils.cpp_extension import (BuildExtension, CppExtension,
+                                           CUDAExtension)
+except Exception:
+    torch = None
+    BuildExtension = None
+    CppExtension = None
+    CUDAExtension = None
 
 version_file = 'basicsr/version.py'
 
@@ -99,7 +106,14 @@ def make_cuda_ext(name, module, sources, sources_cuda=None):
     define_macros = []
     extra_compile_args = {'cxx': []}
 
-    if torch.cuda.is_available() or os.getenv('FORCE_CUDA', '0') == '1':
+    if torch is None:
+        raise RuntimeError('PyTorch is required to build extension modules.')
+
+    cuda_home = os.environ.get('CUDA_HOME') or os.environ.get('CUDA_PATH')
+    if torch.cuda.is_available() and cuda_home is None:
+        print(f'Compiling {name} without CUDA (CUDA_HOME is not set)')
+        extension = CppExtension
+    elif torch.cuda.is_available() or os.getenv('FORCE_CUDA', '0') == '1':
         define_macros += [('WITH_CUDA', None)]
         extension = CUDAExtension
         extra_compile_args['nvcc'] = [
@@ -128,9 +142,15 @@ def get_requirements(filename='requirements.txt'):
 
 
 if __name__ == '__main__':
+    ops_dir = os.path.join('basicsr', 'models', 'ops')
+    disable_ext = ('--no_cuda_ext' in sys.argv or torch is None
+                   or (not os.path.isdir(ops_dir)))
+
     if '--no_cuda_ext' in sys.argv:
-        ext_modules = []
         sys.argv.remove('--no_cuda_ext')
+
+    if disable_ext:
+        ext_modules = []
     else:
         ext_modules = [
             make_cuda_ext(
@@ -178,5 +198,5 @@ if __name__ == '__main__':
         setup_requires=['cython', 'numpy'],
         install_requires=get_requirements(),
         ext_modules=ext_modules,
-        cmdclass={'build_ext': BuildExtension},
+        cmdclass={'build_ext': BuildExtension} if ext_modules else {},
         zip_safe=False)
