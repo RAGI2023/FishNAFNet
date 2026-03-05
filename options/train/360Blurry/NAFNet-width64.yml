@@ -1,0 +1,108 @@
+# NAFNet training config for 360° fisheye deblurring
+# Data: /data/360blurry  (equirectangular blur/sharp pairs)
+# Dataset generates 4 fisheye views per image on-the-fly via UCM projection.
+
+name: NAFNet-360Blurry-width64
+model_type: ImageRestorationModel
+scale: 1
+num_gpu: 1        # adjust to your setup
+manual_seed: 10
+
+datasets:
+  train:
+    name: 360blurry-train
+    type: FisheyeDeblurDataset
+    dataroot_lq: /data/360blurry/train/blur
+    dataroot_gt: /data/360blurry/train/sharp
+
+    # Fisheye UCM parameters (shared by lq and gt for spatial alignment)
+    out_w: 512
+    out_h: 512
+    xi: 0.9
+    f_pix: 220.0          # set to null to use fov_diag_deg fallback
+    # fov_diag_deg: 130   # used only when f_pix is null
+    mask_mode: inscribed  # inscribed | diagonal | none
+
+    # Training augmentation
+    gt_size: 256          # random crop patch size; set to null to use full image
+    use_flip: true
+    use_rot: true
+
+    # Data loader
+    use_shuffle: true
+    num_worker_per_gpu: 4
+    batch_size_per_gpu: 8
+    dataset_enlarge_ratio: 1
+    prefetch_mode: ~
+
+  val:
+    name: 360blurry-val
+    type: FisheyeDeblurDataset
+    dataroot_lq: /data/360blurry/val/blur
+    dataroot_gt: /data/360blurry/val/sharp
+
+    out_w: 512
+    out_h: 512
+    xi: 0.9
+    f_pix: 220.0
+    mask_mode: inscribed
+
+    # No gt_size / augmentation for validation
+
+network_g:
+  type: NAFNet
+  width: 64
+  enc_blk_nums: [1, 1, 1, 28]
+  middle_blk_num: 1
+  dec_blk_nums: [1, 1, 1, 1]
+
+path:
+  pretrain_network_g: ~
+  strict_load_g: true
+  resume_state: ~
+
+train:
+  optim_g:
+    type: AdamW
+    lr: !!float 1e-3
+    weight_decay: !!float 1e-3
+    betas: [0.9, 0.9]
+
+  scheduler:
+    type: TrueCosineAnnealingLR
+    T_max: 400000
+    eta_min: !!float 1e-7
+
+  total_iter: 400000
+  warmup_iter: -1
+
+  pixel_opt:
+    type: PSNRLoss
+    loss_weight: 1
+    reduction: mean
+
+val:
+  val_freq: !!float 2e4
+  save_img: false
+
+  metrics:
+    psnr:
+      type: calculate_psnr
+      crop_border: 0
+      test_y_channel: false
+    ssim:
+      type: calculate_ssim
+      crop_border: 0
+      test_y_channel: false
+
+logger:
+  print_freq: 200
+  save_checkpoint_freq: !!float 5e3
+  use_tb_logger: true
+  wandb:
+    project: ~
+    resume_id: ~
+
+dist_params:
+  backend: nccl
+  port: 29500

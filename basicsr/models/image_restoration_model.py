@@ -268,6 +268,8 @@ class ImageRestorationModel(BaseModel):
 
         cnt = 0
 
+        num_tb_images = self.opt['val'].get('num_tb_images', 4)
+
         for idx, val_data in enumerate(dataloader):
             if idx % world_size != rank:
                 continue
@@ -284,6 +286,17 @@ class ImageRestorationModel(BaseModel):
                 self.grids_inverse()
 
             visuals = self.get_current_visuals()
+
+            # Log sample images to TensorBoard (first num_tb_images, rank 0 only)
+            if tb_logger is not None and rank == 0 and cnt < num_tb_images:
+                tb_logger.add_image(f'val/lq/{cnt}',
+                                    visuals['lq'][0].clamp(0, 1), global_step=current_iter)
+                tb_logger.add_image(f'val/output/{cnt}',
+                                    visuals['result'][0].clamp(0, 1), global_step=current_iter)
+                if 'gt' in visuals:
+                    tb_logger.add_image(f'val/gt/{cnt}',
+                                        visuals['gt'][0].clamp(0, 1), global_step=current_iter)
+
             sr_img = tensor2img([visuals['result']], rgb2bgr=rgb2bgr)
             if 'gt' in visuals:
                 gt_img = tensor2img([visuals['gt']], rgb2bgr=rgb2bgr)
@@ -347,7 +360,6 @@ class ImageRestorationModel(BaseModel):
         if rank == 0:
             pbar.close()
 
-        # current_metric = 0.
         collected_metrics = OrderedDict()
         if with_metrics:
             for metric in self.metric_results.keys():
@@ -355,14 +367,18 @@ class ImageRestorationModel(BaseModel):
             collected_metrics['cnt'] = torch.tensor(cnt).float().to(self.device)
 
             self.collected_metrics = collected_metrics
-        
+
         keys = []
         metrics = []
         for name, value in self.collected_metrics.items():
             keys.append(name)
             metrics.append(value)
         metrics = torch.stack(metrics, 0)
-        torch.distributed.reduce(metrics, dst=0)
+
+        # Only use distributed reduce when running in distributed mode
+        if torch.distributed.is_initialized():
+            torch.distributed.reduce(metrics, dst=0)
+
         if self.opt['rank'] == 0:
             metrics_dict = {}
             cnt = 0
@@ -393,8 +409,12 @@ class ImageRestorationModel(BaseModel):
         logger = get_root_logger()
         logger.info(log_str)
 
+        # Log metrics directly to TensorBoard with actual iteration as step
+        if tb_logger is not None:
+            for metric, value in metric_dict.items():
+                tb_logger.add_scalar(f'metrics/val_{metric}', value, current_iter)
+
         log_dict = OrderedDict()
-        # for name, value in loss_dict.items():
         for metric, value in metric_dict.items():
             log_dict[f'm_{metric}'] = value
 

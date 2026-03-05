@@ -1,0 +1,99 @@
+# Debug config: small iters, frequent val, to verify TensorBoard logging
+name: NAFNet-360Blurry-dev
+model_type: ImageRestorationModel
+scale: 1
+num_gpu: 1
+manual_seed: 10
+
+datasets:
+  train:
+    name: 360blurry-train
+    type: FisheyeDeblurDataset
+    dataroot_lq: /data/360blurry/train/blur
+    dataroot_gt: /data/360blurry/train/sharp
+    out_w: 256
+    out_h: 256
+    xi: 0.9
+    f_pix: 220.0
+    mask_mode: inscribed
+    gt_size: 128
+    use_flip: true
+    use_rot: true
+    use_shuffle: true
+    num_worker_per_gpu: 2
+    batch_size_per_gpu: 2
+    dataset_enlarge_ratio: 1
+    prefetch_mode: ~
+
+  val:
+    name: 360blurry-val
+    type: FisheyeDeblurDataset
+    dataroot_lq: /data/360blurry/val/blur
+    dataroot_gt: /data/360blurry/val/sharp
+    out_w: 256
+    out_h: 256
+    xi: 0.9
+    f_pix: 220.0
+    mask_mode: inscribed
+    val_limit: 50          # only use first 50 images for fast debug validation
+    num_tb_images: 4       # log 4 image triplets (lq/output/gt) to TensorBoard
+
+network_g:
+  type: NAFNet
+  width: 32
+  enc_blk_nums: [1, 1, 1, 4]
+  middle_blk_num: 1
+  dec_blk_nums: [1, 1, 1, 1]
+
+path:
+  pretrain_network_g: ~
+  strict_load_g: true
+  resume_state: ~
+
+train:
+  optim_g:
+    type: AdamW
+    lr: !!float 1e-3
+    weight_decay: !!float 1e-3
+    betas: [0.9, 0.9]
+
+  scheduler:
+    type: TrueCosineAnnealingLR
+    T_max: 500
+    eta_min: !!float 1e-7
+
+  total_iter: 500
+  warmup_iter: -1
+
+  pixel_opt:
+    type: PSNRLoss
+    loss_weight: 1
+    reduction: mean
+
+val:
+  val_freq: 100          # eval every 100 iters
+  save_img: false
+  use_image: true
+  num_tb_images: 4
+
+  metrics:
+    psnr:
+      type: calculate_psnr
+      crop_border: 0
+      test_y_channel: false
+    ssim:
+      type: calculate_ssim
+      crop_border: 0
+      test_y_channel: false
+
+logger:
+  print_freq: 10
+  save_checkpoint_freq: 500
+  use_tb_logger: true
+  wandb:
+    project: ~
+    resume_id: ~
+
+dist_params:
+  backend: nccl
+  port: 29500
