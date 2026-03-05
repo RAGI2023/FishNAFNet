@@ -1,11 +1,21 @@
 import os
 import cv2
 import numpy as np
+from functools import lru_cache
 from torch.utils import data as data
 
 from basicsr.data.transforms import augment, paired_random_crop
 from basicsr.utils import img2tensor, padding
 from basicsr.data.equirect_utils import equirect_to_fisheye_ucm
+
+
+@lru_cache(maxsize=4)
+def _read_image_cached(path):
+    """Per-worker LRU cache for equirectangular images (RGB uint8)."""
+    img = cv2.imread(path)
+    if img is None:
+        raise FileNotFoundError(f"Cannot read image: {path}")
+    return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
 
 class FisheyeDeblurDataset(data.Dataset):
@@ -117,15 +127,9 @@ class FisheyeDeblurDataset(data.Dataset):
         lq_path, gt_path = self.pairs[img_idx]
         view_name, base_dir = self.VIEWS[view_idx]
 
-        # Load equirectangular images (BGR -> RGB)
-        img_lq = cv2.imread(lq_path)
-        img_gt = cv2.imread(gt_path)
-        if img_lq is None:
-            raise FileNotFoundError(f"Cannot read lq image: {lq_path}")
-        if img_gt is None:
-            raise FileNotFoundError(f"Cannot read gt image: {gt_path}")
-        img_lq = cv2.cvtColor(img_lq, cv2.COLOR_BGR2RGB)
-        img_gt = cv2.cvtColor(img_gt, cv2.COLOR_BGR2RGB)
+        # Load equirectangular images (cached per worker to avoid 4x redundant reads)
+        img_lq = _read_image_cached(lq_path)
+        img_gt = _read_image_cached(gt_path)
 
         # Project both with identical parameters
         img_lq = self._project(img_lq, base_dir).astype(np.float32) / 255.0  # HWC RGB [0,1]
