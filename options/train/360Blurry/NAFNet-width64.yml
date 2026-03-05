@@ -46,6 +46,7 @@ datasets:
     xi: 0.9
     f_pix: 220.0
     mask_mode: inscribed
+    val_limit: 500         # only use first 500 images (~40s per eval)
 
     # No gt_size / augmentation for validation
 
@@ -77,8 +78,13 @@ train:
   warmup_iter: -1
 
   pixel_opt:
+    type: MSELoss
+    loss_weight: 0.5
+    reduction: mean
+
+  pixel_opt2:
     type: PSNRLoss
-    loss_weight: 1
+    loss_weight: 0.5
     reduction: mean
 
 val:

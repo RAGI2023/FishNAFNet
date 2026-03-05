@@ -54,6 +54,14 @@ class ImageRestorationModel(BaseModel):
         else:
             self.cri_pix = None
 
+        if train_opt.get('pixel_opt2'):
+            pixel_type2 = train_opt['pixel_opt2'].pop('type')
+            cri_pix2_cls = getattr(loss_module, pixel_type2)
+            self.cri_pix2 = cri_pix2_cls(**train_opt['pixel_opt2']).to(
+                self.device)
+        else:
+            self.cri_pix2 = None
+
         if train_opt.get('perceptual_opt'):
             percep_type = train_opt['perceptual_opt'].pop('type')
             cri_perceptual_cls = getattr(loss_module, percep_type)
@@ -62,7 +70,7 @@ class ImageRestorationModel(BaseModel):
         else:
             self.cri_perceptual = None
 
-        if self.cri_pix is None and self.cri_perceptual is None:
+        if self.cri_pix is None and self.cri_pix2 is None and self.cri_perceptual is None:
             raise ValueError('Both pixel and perceptual losses are None.')
 
         # set up optimizers and schedulers
@@ -209,6 +217,13 @@ class ImageRestorationModel(BaseModel):
             # print('l pix ... ', l_pix)
             l_total += l_pix
             loss_dict['l_pix'] = l_pix
+
+        if self.cri_pix2:
+            l_pix2 = 0.
+            for pred in preds:
+                l_pix2 += self.cri_pix2(pred, self.gt)
+            l_total += l_pix2
+            loss_dict['l_pix2'] = l_pix2
 
         # perceptual loss
         if self.cri_perceptual:
