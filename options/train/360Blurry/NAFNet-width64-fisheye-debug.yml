@@ -1,0 +1,102 @@
+# DEBUG config — tiny dataset (16 images), fast iteration
+name: NAFNet-360Blurry-Fisheye-debug
+model_type: ImageRestorationModel
+scale: 1
+num_gpu: 1
+manual_seed: 10
+
+datasets:
+  train:
+    name: 360blurry-fisheye-debug-train
+    type: PairedImageDataset
+    dataroot_lq: /data/360blurry_fisheye_debug/train/blur
+    dataroot_gt: /data/360blurry_fisheye_debug/train/sharp
+    io_backend:
+      type: disk
+
+    gt_size: 256
+    use_flip: false
+    use_rot: false
+
+    use_shuffle: false
+    num_worker_per_gpu: 2
+    batch_size_per_gpu: 2
+    dataset_enlarge_ratio: 1
+    prefetch_mode: ~
+
+  val:
+    name: 360blurry-fisheye-debug-val
+    type: PairedImageDataset
+    dataroot_lq: /data/360blurry_fisheye_debug/val/blur
+    dataroot_gt: /data/360blurry_fisheye_debug/val/sharp
+    io_backend:
+      type: disk
+
+network_g:
+  type: NAFNet
+  width: 64
+  enc_blk_nums: [1, 1, 1, 28]
+  middle_blk_num: 1
+  dec_blk_nums: [1, 1, 1, 1]
+
+path:
+  pretrain_network_g: ~
+  strict_load_g: true
+  resume_state: ~
+
+train:
+  optim_g:
+    type: AdamW
+    lr: !!float 1e-3
+    weight_decay: !!float 1e-3
+    betas: [0.9, 0.9]
+
+  scheduler:
+    type: TrueCosineAnnealingLR
+    T_max: 100
+    eta_min: !!float 1e-7
+
+  total_iter: 100
+  warmup_iter: -1
+
+  pixel_opt:
+    type: MSELoss
+    loss_weight: 0.5
+    reduction: mean
+
+  pixel_opt2:
+    type: PSNRLoss
+    loss_weight: 0.5
+    reduction: mean
+
+  perceptual_opt:
+    type: VGGPerceptualLoss
+    loss_weight: 0.6
+    style_weight: 0.0
+    use_input_norm: true
+
+val:
+  val_freq: 50
+  save_img: false
+
+  metrics:
+    psnr:
+      type: calculate_psnr
+      crop_border: 0
+      test_y_channel: false
+    ssim:
+      type: calculate_ssim
+      crop_border: 0
+      test_y_channel: false
+
+logger:
+  print_freq: 10
+  save_checkpoint_freq: 50
+  use_tb_logger: false
+  wandb:
+    project: ~
+    resume_id: ~
+
+dist_params:
+  backend: nccl
+  port: 29500

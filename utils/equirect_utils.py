@@ -194,7 +194,7 @@ def equirect_to_fisheye_ucm(
         np.random.seed(seed)
 
     rot_jit = jitter_cfg.get("rotation_jitter", {})
-    light_cfg = jitter_cfg.get("lighting", {})
+    light_cfg = jitter_cfg.get("lighting", None)
 
     # rotation jitter
     yaw_deg += random.uniform(-rot_jit.get("yaw", 0), rot_jit.get("yaw", 0))
@@ -260,8 +260,9 @@ def equirect_to_fisheye_ucm(
         borderMode=cv.BORDER_WRAP,
     )
 
-    # lighting jitter
-    view = apply_lighting_jitter(view, light_cfg)
+    # lighting jitter (only when explicitly configured)
+    if light_cfg:
+        view = apply_lighting_jitter(view, light_cfg)
 
     # apply circular mask (the "black outside FOV" behavior)
     mask = build_circular_mask(out_h, out_w, mode=mask_mode)
